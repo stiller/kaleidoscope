@@ -199,4 +199,52 @@ static ExprAST *ParsePrimary() {
   case tok_number:     return ParseNumberExpr();
   case '(':            return ParseParenExpr();
   }
-} 
+}
+
+static std::map<char, int> BinopPrecedence;
+
+static int GetTokPrecedence() {
+  if(!isascii(CurTok))
+    return -1;
+
+  int TokPrec = BinopPrecedence[CurTok];
+  if (TokPrec <= 0) return -1;
+  return TokPrec;
+}
+
+int main() {
+  BinopPrecedence['<'] = 10;
+  BinopPrecedence['+'] = 20;
+  BinopPrecedence['-'] = 20;
+  BinopPrecedence['*'] = 40; //highest
+}
+
+static ExprAST *ParseExpression() {
+  ExprAST *LHS = ParsePrimary();
+  if(!LHS) return 0;
+
+  return ParseBinOpRHS(0, LHS);
+}
+
+static ExprAST *ParseBinOpRHS(int ExprPrec, ExprAST *LHS) {
+  while(1) {
+    int TokPrec = GetTokPrecedence();
+
+    if(TokPrec < ExprPrec)
+      return LHS;
+
+    int BinOp = CurTok;
+    getNextToken(); // eat binop
+
+    ExprAST *RHS = ParsePrimary();
+    if(!RHS) return 0;
+
+    int NextPrec = GetTokPrecedence();
+    if (TokPrec < NextPrec) {
+      RHS = ParseBinOpRHS(TokPrec+1, RHS);
+      if(RHS == 0) return 0;
+    }
+
+    LHS = new BinaryExprAST(BinOp, LHS, RHS);
+  }
+}
