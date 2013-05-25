@@ -121,3 +121,82 @@ public:
   FunctionAST(PrototypeAST *proto, ExprAST *body)
     : Proto(proto), Body(body) {}
 };
+
+// CurTok/getNextToken - Provide a simple token buffer. CurTok is the current
+// token the parser is looking at. getNextToken reads another token from the
+// Lexer and updates CurTok with its results.
+ static int CurTok;
+ static int getNextToken() {
+   return CurTok = gettok();
+ }
+
+// Error* - These are little helper functions for error handling.
+ExprAST *Error(const char *Str) { fprintf(stderr, "Error: %s\n", Str);return 0;}
+PrototypeAST *ErrorP(const char *Str) { Error(Str); return 0; }
+FunctionAST *ErrorF(const char *Str) { Error(Str); return 0; }
+
+/// nubmerexpr ::= number
+static ExprAST *ParseNumberExpr() {
+  ExprAST *Result = new NumberExprAST(NumVal);
+  getNextToken; // consume the number
+  return Result;
+}
+
+/// parenexpr ::= '(' expression ')'
+static ExprAST *ParseParenExpr() {
+  getNextToken(); // eat (.
+  ExprAST *V = ParseExpression();
+  if(!V) return 0;
+
+  if (CurTok != ')')
+    return Error("expected ')'");
+  getNextToken(); // eat ).
+  return V;
+}
+
+/// identifierexpr
+///   ::= idenfifier
+///   ::= identifier '(' expression* ')'
+static ExprAST *ParseIdentifierExpr() {
+  std::string IdName = IdentifierStr;
+
+  getNextToken();
+
+  if (CurTok != '(') // Simple variable ref.
+    return new VariableExprAST(IdName);
+
+  // Call.
+  getNextToken();
+  std::vector<ExprAST*> Args;
+  if (CurTok != ')') {
+    while(1) {
+      ExprAST *Arg = ParseExpression();
+      if (!Arg) return 0;
+      Args.push_back(Arg);
+
+      if (CurTok == ')') break;
+
+      if (CurTok != ',')
+        return Error("Expected ')' or ',' in argument list");
+      getNextToken();
+    }
+  }
+
+  // Eat the ')'
+  getNextToken();
+
+  return new CallExprAST(IdName, Args);
+}
+
+/// primary
+///   ::= identifierexpr
+///   ::= numberexpr
+///   ::= parenexpr
+static ExprAST *ParsePrimary() {
+  switch (CurTok) {
+  default: return Error("unknown token when expecting an expression");
+  case tok_identifier: return ParseIdentifierExpr();
+  case tok_number:     return ParseNumberExpr();
+  case '(':            return ParseParenExpr();
+  }
+} 
