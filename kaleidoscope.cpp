@@ -45,7 +45,7 @@ static int gettok() {
     return tok_number;
   }
 
-  if (LastChar == "#") {
+  if (LastChar == '#') {
     // Comment until end of line
     do LastChar = getchar();
     while(LastChar != EOF && LastChar != '\n' && LastChar != '\r');
@@ -135,10 +135,12 @@ ExprAST *Error(const char *Str) { fprintf(stderr, "Error: %s\n", Str);return 0;}
 PrototypeAST *ErrorP(const char *Str) { Error(Str); return 0; }
 FunctionAST *ErrorF(const char *Str) { Error(Str); return 0; }
 
+static ExprAST *ParseExpression();
+
 /// nubmerexpr ::= number
 static ExprAST *ParseNumberExpr() {
   ExprAST *Result = new NumberExprAST(NumVal);
-  getNextToken; // consume the number
+  getNextToken(); // consume the number
   return Result;
 }
 
@@ -160,7 +162,7 @@ static ExprAST *ParseParenExpr() {
 static ExprAST *ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
 
-  getNextToken();
+  getNextToken();  // eat idenfifier
 
   if (CurTok != '(') // Simple variable ref.
     return new VariableExprAST(IdName);
@@ -176,8 +178,9 @@ static ExprAST *ParseIdentifierExpr() {
 
       if (CurTok == ')') break;
 
-      if (CurTok != ',')
+      if (CurTok != ','){
         return Error("Expected ')' or ',' in argument list");
+      }
       getNextToken();
     }
   }
@@ -212,20 +215,6 @@ static int GetTokPrecedence() {
   return TokPrec;
 }
 
-int main() {
-  BinopPrecedence['<'] = 10;
-  BinopPrecedence['+'] = 20;
-  BinopPrecedence['-'] = 20;
-  BinopPrecedence['*'] = 40; //highest
-}
-
-static ExprAST *ParseExpression() {
-  ExprAST *LHS = ParsePrimary();
-  if(!LHS) return 0;
-
-  return ParseBinOpRHS(0, LHS);
-}
-
 static ExprAST *ParseBinOpRHS(int ExprPrec, ExprAST *LHS) {
   while(1) {
     int TokPrec = GetTokPrecedence();
@@ -247,4 +236,112 @@ static ExprAST *ParseBinOpRHS(int ExprPrec, ExprAST *LHS) {
 
     LHS = new BinaryExprAST(BinOp, LHS, RHS);
   }
+}
+
+static ExprAST *ParseExpression() {
+  ExprAST *LHS = ParsePrimary();
+  if(!LHS) return 0;
+
+  return ParseBinOpRHS(0, LHS);
+}
+
+static PrototypeAST *ParsePrototype() {
+  if(CurTok != tok_identifier)
+    return ErrorP("Expected function name in prototype");
+
+  std::string FnName = IdentifierStr;
+  getNextToken();
+
+  if (CurTok != '(')
+    return ErrorP("Expected '(' in prototype");
+
+  std::vector<std::string> ArgNames;
+  while (getNextToken() == tok_identifier)
+    ArgNames.push_back(IdentifierStr);
+  if (CurTok != ')')
+    return ErrorP("Expected ')' in prototype");
+
+  getNextToken();
+
+  return new PrototypeAST(FnName, ArgNames);
+}
+
+static FunctionAST *ParseDefinition() {
+  getNextToken(); // eat def.
+  PrototypeAST *Proto = ParsePrototype();
+  if(Proto == 0) return 0;
+
+  if(ExprAST *E = ParseExpression())
+    return new FunctionAST(Proto, E);
+  return 0;
+}
+
+static PrototypeAST *ParseExtern() {
+  getNextToken();
+  return ParsePrototype();
+}
+
+static FunctionAST *ParseTopLevelExpr() {
+  if (ExprAST *E = ParseExpression()) {
+    PrototypeAST *Proto = new PrototypeAST("", std::vector<std::string>());
+    return new FunctionAST(Proto, E);
+  }
+  return 0;
+}
+
+static void HandleDefinition() {
+  if (ParseDefinition()) {
+    fprintf(stderr, "Parsed a function definition.\n");
+  } else {
+    // Skip token for error recovery.
+    getNextToken();
+  }
+}
+
+static void HandleExtern() {
+  if (ParseExtern()) {
+    fprintf(stderr, "Parsed an extern\n");
+  } else {
+    // Skip token for error recovery.
+    getNextToken();
+  }
+}
+
+static void HandleTopLevelExpression() {
+  // Evaluate a top-level expression into an anonymous function.
+  if (ParseTopLevelExpr()) {
+    fprintf(stderr, "Parsed a top-level expr\n");
+  } else {
+    // Skip token for error recovery.
+    getNextToken();
+  }
+}
+
+static void MainLoop() {
+  while(1) {
+    fprintf(stderr, "ready> ");
+    switch (CurTok) {
+      case tok_eof:    return;
+      case ';':        getNextToken(); break;
+      case tok_def:    HandleDefinition(); break;
+      case tok_extern: HandleExtern(); break;
+      default:         HandleTopLevelExpression(); break;
+    }
+  }
+}
+
+int main() {
+  BinopPrecedence['<'] = 10;
+  BinopPrecedence['+'] = 20;
+  BinopPrecedence['-'] = 20;
+  BinopPrecedence['*'] = 40; //highest
+
+  // Prime the first token
+  fprintf(stderr, "ready> ");
+  getNextToken();
+
+  // Run the main interpreter loop
+  MainLoop();
+
+  return 0;
 }
